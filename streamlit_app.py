@@ -1,3 +1,4 @@
+from ssl import Options
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,7 +7,7 @@ from scipy.stats import norm
 import altair as alt
 
 st.set_page_config(
-    page_title="A/B Testing App", page_icon="📊", initial_sidebar_state="expanded"
+    page_title="A/B Testing App", page_icon="📊", initial_sidebar_state="expanded",layout="wide"
 )
 
 
@@ -146,7 +147,7 @@ def significance(alpha, p):
     str
         "YES" if significant result; else "NO"
     """
-    return "YES" if p < alpha else "NO"
+    return "👍" if p < alpha else "😢"
 
 
 def plot_chart(df):
@@ -261,18 +262,17 @@ def calculate_significance(
         st.session_state.alpha, st.session_state.p
     )
 
-
 st.write(
     """
-# 📊 A/B Testing App
-Upload your experiment results to see the significance of your A/B test.
+# 📊 A/B テスト
+実験結果をアップロードして有意性の確認をしてみましょう。
 """
 )
 
-uploaded_file = st.file_uploader("Upload CSV", type=".csv")
+uploaded_file = st.file_uploader("CSVをアップロードする", type=".csv")
 
 use_example_file = st.checkbox(
-    "Use example file", False, help="Use in-built example file to demo the app"
+    "まずは試してみる", False, help="テスト用のデータを利用して結果のデモを表示します。"
 )
 
 ab_default = None
@@ -288,25 +288,24 @@ if use_example_file:
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
+    st.markdown("### データプレビュー")
+    st.dataframe(df, 1000, 200)
 
-    st.markdown("### Data preview")
-    st.dataframe(df.head())
-
-    st.markdown("### Select columns for analysis")
-    with st.form(key="my_form"):
+    st.sidebar.markdown("### 分析設定")
+    with st.sidebar.form(key="my_form"):
         ab = st.multiselect(
-            "A/B column",
+            "A/B カラム",
             options=df.columns,
-            help="Select which column refers to your A/B testing labels.",
+            help="A/Bのグループが識別できるカラムを選択してください。",
             default=ab_default,
         )
         if ab:
             control = df[ab[0]].unique()[0]
             treatment = df[ab[0]].unique()[1]
             decide = st.radio(
-                f"Is *{treatment}* Group B?",
+                f"「{treatment}」 をグループBとしますか?",
                 options=["Yes", "No"],
-                help="Select yes if this is group B (or the treatment group) from your test.",
+                help=f"「{treatment}」がグループB(もしくは修正後グループ)であるならYesを選択してください。",
             )
             if decide == "No":
                 control, treatment = treatment, control
@@ -314,9 +313,9 @@ if uploaded_file:
             visitors_b = df[ab[0]].value_counts()[treatment]
 
         result = st.multiselect(
-            "Result column",
+            "結果カラム",
             options=df.columns,
-            help="Select which column shows the result of the test.",
+            help="A/Bテストの比較対象となるカラムを選択してください。",
             default=result_default,
         )
 
@@ -328,29 +327,30 @@ if uploaded_file:
                 df[[ab[0], result[0]]].groupby(ab[0]).agg("sum")[result[0]][treatment]
             )
 
-        with st.expander("Adjust test parameters"):
-            st.markdown("### Parameters")
+        with st.expander("詳細設定"):
             st.radio(
-                "Hypothesis type",
-                options=["One-sided", "Two-sided"],
+                "仮説タイプ",
+                options=["片面", "両面"],
                 index=0,
                 key="hypothesis",
-                help="TBD",
+                help="片側検定は、対立仮説の効果が一方向であると仮定し、両側検定は、仮説の効果が両方向（良い影響と悪い影響）である可能性も考慮します。",
             )
             st.slider(
-                "Significance level (α)",
+                "有意性レベル (α)",
                 min_value=0.01,
                 max_value=0.10,
                 value=0.05,
                 step=0.01,
                 key="alpha",
-                help=" The probability of mistakenly rejecting the null hypothesis, if the null hypothesis is true. This is also called false positive and type I error. ",
+                help="有意性を認める基準値を設定します。",
             )
 
-        submit_button = st.form_submit_button(label="Submit")
+        submit_button = st.form_submit_button(label="実行")
+
+
 
     if not ab or not result:
-        st.warning("Please select both an **A/B column** and a **Result column**.")
+        st.warning("「A/Bカラム」と「結果カラム」を選択してください。")
         st.stop()
 
     # type(uploaded_file) == str, means the example file was used
@@ -358,7 +358,7 @@ if uploaded_file:
         "Website_Results.csv" if isinstance(uploaded_file, str) else uploaded_file.name
     )
     st.write("")
-    st.write("## Results for A/B test from ", name)
+    st.write("## A/Bテスト結果 (", name, ")")
     st.write("")
 
     # Obtain the metrics to display
@@ -376,18 +376,18 @@ if uploaded_file:
     # Use st.metric to diplay difference in conversion rates
     with mcol1:
         st.metric(
-            "Delta",
+            "変化量",
             value=f"{(st.session_state.crb - st.session_state.cra):.3g}%",
             delta=f"{(st.session_state.crb - st.session_state.cra):.3g}%",
         )
     # Display whether or not A/B test result is statistically significant
     with mcol2:
-        st.metric("Significant?", value=st.session_state.significant)
+        st.metric("有意性の判定結果", value=st.session_state.significant)
 
     # Create a single-row, two-column DataFrame to use in bar chart
     results_df = pd.DataFrame(
         {
-            "Group": ["Control", "Treatment"],
+            "Group": ["施策前", "施策後"],
             "Conversion": [st.session_state.cra, st.session_state.crb],
         }
     )
@@ -405,7 +405,7 @@ if uploaded_file:
             "Total": [visitors_a, visitors_b],
             "% Converted": [st.session_state.cra, st.session_state.crb],
         },
-        index=pd.Index(["Control", "Treatment"]),
+        index=pd.Index(["施策前", "施策後"]),
     )
 
     # Format "% Converted" column values to 3 decimal places
@@ -417,7 +417,7 @@ if uploaded_file:
             "z-score": [st.session_state.z],
             "uplift": [st.session_state.uplift],
         },
-        index=pd.Index(["Metrics"]),
+        index=pd.Index(["計測値"]),
     )
 
     # Color negative values red; color significant p-value green and not significant red
